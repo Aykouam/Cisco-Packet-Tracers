@@ -1,0 +1,63 @@
+name: Split Folders to Branches
+
+on:
+  push:
+    branches:
+      - main  # Runs automatically whenever you push or upload to main
+
+jobs:
+  split-folders:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      
+    steps:
+      - name: Checkout main branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git Author
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@://github.com"
+
+      - name: Process each folder
+        run: |
+          # Loop through all top-level directories, ignoring hidden ones like .github
+          for dir in */; do
+            # Clean folder name (remove trailing slash)
+            branch_name="${dir%/}"
+            
+            # Skip hidden folders
+            if [[ "$branch_name" == .* ]]; then
+              continue
+            fi
+            
+            echo "Processing folder: $branch_name"
+            
+            # Create a temporary directory outside the git tree to hold files
+            mkdir -p /tmp/isolated_files
+            cp -r "$branch_name"/* /tmp/isolated_files/
+            
+            # Switch to a clean orphan branch named after the folder
+            git checkout --orphan "$branch_name"
+            
+            # Wipe out all files from main on this branch
+            git rm -rf .
+            
+            # Move the specific Packet Tracer/screenshot files back into the root of this branch
+            cp -r /tmp/isolated_files/* .
+            rm -rf /tmp/isolated_files
+            
+            # Add files, commit, and force-push to update the branch on GitHub
+            git add .
+            if git commit -m "Automated sync for $branch_name (Packet Tracer files)"; then
+              git push origin "$branch_name" --force
+            else
+              echo "No changes to commit for $branch_name"
+            fi
+            
+            # Switch back to main to process the next folder loop
+            git checkout main
+          done
